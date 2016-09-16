@@ -4,7 +4,6 @@
          ensure:file/directory
          ensure:file/symlink
          ensure:system-package/installed
-         ensure:pkgin-package/installed
          ensure:dnf-package/installed
          ensure:apt-package/installed
          ensure:service/started

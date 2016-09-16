@@ -1,6 +1,5 @@
 #lang racket
 (provide system-package/installed
-         pkgin-package/installed
          dnf-package/installed
          apt-package/installed)
 
@@ -9,7 +8,6 @@
          (only-in "../diff.rkt" compute-differences has-differences?)
          "../exceptions.rkt"
          "result.rkt"
-         (prefix-in pkgin: "../package/pkgin.rkt")
          (prefix-in dnf: "../package/dnf.rkt")
          (prefix-in apt: "../package/apt.rkt"))
 
@@ -50,18 +48,11 @@
 
 
 (define (system-package/installed name #:comment [comment #f])
-  ((cond [(pkgin:available?) pkgin-package/installed]
-         [(dnf:available?) dnf-package/installed]
+  ((cond [(dnf:available?) dnf-package/installed]
          [(apt:available?) apt-package/installed]
          [else (provee:raise exn:fail:provee:ensure
                              "cannot find a supported package manager")])
     name #:comment comment))
-
-
-(define pkgin-package/installed (make-installed-proc 'pkgin-package/installed
-                                                     pkgin:package-installed?
-                                                     pkgin:list-installed
-                                                     pkgin:install-package))
 
 
 (define dnf-package/installed (make-installed-proc 'dnf-package/installed
