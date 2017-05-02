@@ -10,7 +10,7 @@
          "exceptions.rkt"
          (prefix-in ensure: "ensure/result.rkt")
          "diff/display.rkt"
-         (for-syntax syntax/parse)
+         (for-syntax syntax/parse racket/match)
          racket/runtime-path)
 
 
@@ -61,25 +61,50 @@
 
 
 (define-syntax (provee:script stx)
-  (define-splicing-syntax-class log-level-option
-    (pattern (~seq #:log-level level:expr)))
   (define-splicing-syntax-class runtime-paths-option
     (pattern (~seq #:runtime-paths (((~seq name:id path:expr)) ...))))
+  (define-splicing-syntax-class script-arguments
+    (pattern (~seq (((~seq name:id default:expr description:expr)) ...))))
   (syntax-parse stx
-    [(_ (~or (~optional log-level:log-level-option)
+    [(_ script-name:id
+        (~or (~optional arguments:script-arguments)
              (~optional runtime-paths:runtime-paths-option)) ... clause ...)
-     (datum->syntax stx (syntax->datum (quasisyntax/loc stx
-       (begin
-         (require (only-in racket/runtime-path define-runtime-paths))
-         (define-runtime-paths
-           #,(or (attribute runtime-paths.name) #'())
-           (values #,@(or (attribute runtime-paths.path) #'())))
-         (void
-           (provee:initialize!
-             #:log-level #,(or (attribute log-level.level) #''info))
-           (with-handlers
-             ([(lambda (e) #t) (lambda (e)
-                                 (provee:finalize!)
-                                 (raise e))])
-             clause ...)
-           (provee:finalize!))))))]))
+     (let* ([arguments (map list (attribute arguments.name)
+                                 (attribute arguments.default)
+                                 (attribute arguments.description))]
+            [argument-parameters
+             (for/list ([(argument) arguments])
+               (list (datum->syntax stx
+                       (string->symbol
+                         (format "~a-~a"
+                           (syntax->datum (attribute script-name))
+                           (syntax->datum (list-ref argument 0)))))
+                     (list-ref argument 1)))])
+       (quasisyntax/loc stx
+         (begin
+           (require (only-in racket/runtime-path define-runtime-paths))
+           (define-runtime-paths
+             #,(or (attribute runtime-paths.name) #'())
+             (values #,@(or (attribute runtime-paths.path) #'())))
+           #,@(for/list ([(argument) argument-parameters])
+                (match argument
+                  [(list name default)
+                   `(define ,name (make-parameter ,default))]))
+           (command-line
+             #:once-each
+             #,@(for/list ([(values)
+                            (map list arguments argument-parameters)])
+                  (match values
+                    [(list (list name default desc) (list param-name _))
+                     (let* ([option (datum->syntax stx
+                                      (format "--~a" (syntax->datum name)))])
+                       `((,option) ,name ,desc (,param-name ,name)))])))
+           (void
+             (provee:initialize!
+               #:log-level 'info)
+             (with-handlers
+               ([(lambda (e) #t) (lambda (e)
+                                   (provee:finalize!)
+                                   (raise e))])
+               clause ...)
+             (provee:finalize!)))))]))
